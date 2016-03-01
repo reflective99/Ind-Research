@@ -1,0 +1,495 @@
+setwd("~/Documents/Duke/Research/Re%3a_NSF_download")
+#rm(NSFAwards.Table)
+#rm(NSFAwards.Table)
+library(snowfall)
+#load("//div-stpi/public/___STPIData/NSFAwardsData/NSFAwards.Table.Rdata")
+#dim(NSFAwards.Table)
+#names(NSFAwards.Table)
+#awards.2010 <- NSFAwards.Table[NSFAwards.Table$AwardEffectiveYear == 2010,]
+#dim(awards.2010)
+#rm(NSFAwards.Table)
+#gc()
+#save('awards.2010', file = 'data/awards_2010.RData')
+load(file="awards_2010.RData")
+award.vec = awards.2010$AbstractNarration[1:1000]
+names(award.vec)=awards.2010$AwardID[1:1000]
+award.vec[1]
+source("scripts/MakeDtmFunctions.R")
+source("MakeDtmFunctions.R")
+dtm = Vec2Dtm(vec = award.vec, max.n.gram = 2)
+dtm = Vec2Dtm(vec = award.vec, max.n.gram = 2)
+install.packages("MYLDA")
+dtm = Vec2Dtm(vec = award.vec, max.n.gram = 2)
+dtm = Vec2Dtm(vec = award.vec, max.n.gram = 2)
+dtm = Vec2Dtm(vec = award.vec, max.n.gram = 1)
+dtm = DepluralizeDtm(dtm = dtm)
+dim(dtm)
+tf.mat = data.frame(term = colnames(dtm), tf = colSums(dtm), df = colSums(dtm>0), stringsAsFactors = F)
+#^ could add idf column
+keep.terms = tf.mat$term[tf.mat$df>=5 & tf.mat$df < nrow(dtm)/2]
+keep.terms = ManualTrimVocab(keep.terms)
+doc.length = rowSums(dtm)
+which(doc.length==0)
+dropped.docs=rownames(dtm)[doc.length <20]
+dtm = dtm[!rownames(dtm) %in% dropped.docs,]
+dim(dtm)
+str(dtm)
+source("TopicModelingFunctions.R")
+install.packages("wordcloud")
+source("TopicModelingFunctions.R")
+keep.terms = tf.mat$term[tf.mat$df>=5 & tf.mat$df < nrow(dtm)/2]
+keep.terms = ManualTrimVocab(keep.terms)
+new.docs = Dtm2Docs(dtm.sparse = dtm, parallel = F, cpus = 8)
+lex = lexicalize(doclines = new.docs, sep = " ",vocab = keep.terms )
+rm(new.docs);gc()
+head(lex)
+#
+k.list = seq(50, 250, by = 50)
+k.list = c(10,25, k.list)
+sfInit(parallel = T, cpus = 8)
+sfExport(list=c("lex","keep.terms"))
+sfLibrary(lda)
+models = sfLapply(k.list,function(k){
+result = lda.collapsed.gibbs.sampler(documents = lex, K = k, vocab = keep.terms, num.iterations = 5,
+alpha = 5/k,eta = .05, compute.log.likelihood = T)
+})
+test = lda.collapsed.gibbs.sampler(documents = lex, K = k, vocab = keep.terms, num.iterations = 5,  alpha = .01,eta = .05, compute.log.likelihood = T)
+##
+sfStop()
+names(models) = paste("k.", k.list, sep="")
+plot(models$k.250$log.likelihoods[2,],type="l")
+sfInit(parallel = T, cpus = 8)
+sfExport(list=c("lex","keep.terms"))
+sfLibrary(lda)
+models = sfLapply(k.list,function(k){
+result = lda.collapsed.gibbs.sampler(documents = lex, K = 10, vocab = keep.terms, num.iterations = 5,
+alpha = 5/k,eta = .05, compute.log.likelihood = T)
+})
+test = lda.collapsed.gibbs.sampler(documents = lex, K = 10, vocab = keep.terms, num.iterations = 5,  alpha = .01,eta = .05, compute.log.likelihood = T)
+##
+sfStop()
+names(models) = paste("k.", k.list, sep="")
+plot(models$k.250$log.likelihoods[2,],type="l")
+##models obtained
+View(models$k.250$topics)
+model.output= lapply(models, function(x){ ExtractLdaResults_lda(lda.result = x, docnames = rownames(dtm))})
+str(model.output)
+#choose k
+r2 = lapply(model.output, function(x){TopicModelR2(dtm.sparse = dtm, topic.terms = x$topic.terms, doc.topics = x$doc.topics, normalize = F, parallel = T,cpus = 8)})
+str(r2[[2]])
+r2 = lapply(model.output, function(x){TopicModelR2(dtm.sparse = dtm, topic.terms = x$topic.terms, doc.topics = x$doc.topics, normalize = F, parallel = T,cpus = 8)})
+sfInit(parallel=T,cpus = 8)
+sfExport("dtm")
+sfSource("TopicModelingFunctions.R")
+pcoh = sfLapply(model.output, function(x){
+result = apply(x$topic.terms, 1, function(y){
+tCoherence2(topic = y,M = 5,dtm.sparse = dtm)
+})
+result
+})
+sfInit(parallel=T,cpus = 8)
+sfExport("dtm")
+sfSource("TopicModelingFunctions.R")
+pcoh = sfLapply(model.output, function(x){
+result = apply(x$topic.terms, 1, function(y){
+ProbCoherence(topic = y,M = 5,dtm.sparse = dtm)
+})
+result
+})
+sfStop()
+metrics.mat = data.frame(k = k.list, ll=sapply(model.output, function(x){
+x$likelihood[2,ncol(x$likelihood)]}),
+r2 = sapply(r2, function(x) x$r2),
+pcoh = sapply(pcoh,median),
+stringsAsFactors = F)
+metrics.mat = data.frame(k = k.list, ll=sapply(model.output, function(x){
+x$likelihood[2,ncol(x$likelihood)]}),
+#r2 = sapply(r2, function(x) x$r2),
+pcoh = sapply(pcoh,median),
+stringsAsFactors = F)
+plot(metrics.mat$k, metrics.mat$ll, type="o")
+plot(metrics.mat$k, metrics.mat$r2, type="o")
+plot(metrics.mat$k, metrics.mat$pcoh, type="o")
+top.terms3 = GetTopTerms(topic.terms = model.output$k.100$topic.terms, M = 3)
+View(top.terms3)
+top.terms10 = GetTopTerms(topic.terms = model.output$k.100$topic.terms, M = 10)
+View(top.terms10)
+#summary and visualization
+topic.summary = data.frame(topic = colnames(top.terms10),
+top.terms = apply(top.terms10, 2, function(x){paste(x, collapse = " | ")}),
+pcoh = pcoh$k.100,
+prevalence = colSums(model.output$k.100$doc.topics)/sum(colSums(model.output$k.100$doc.topics))*100,
+stringsAsFactors = F)
+View(topic.summary)
+for(j in 1:nrow(model.output$k.100$topic.terms)){
+TopicWordCloud(term.freq.vec = model.output$k.100$topic.terms[j,],
+title = rownames(model.output$k.100$topic.terms)[j],
+outfilepath = "wordclouds/"   )
+}
+for(j in 1:nrow(model.output$k.100$topic.terms)){
+TopicWordCloud(term.freq.vec = model.output$k.100$topic.terms[j,],
+title = rownames(model.output$k.100$topic.terms)[j],
+outfilepath = "/"   )
+}
+clear()
+install.packages("rjson")
+library("rjson")
+json_file <- "articles.json"
+json_data <- fromJSON(file=json_file)
+install.packages("jsonlite")
+articles <- fromJSON("articles.json", flatten=TRUE)
+library(jsonlite)
+articles <- fromJSON("articles.json", flatten=TRUE)
+colnames(articles)
+View(articles)
+load("~/Documents/Duke/Research/Re%3a_NSF_download/awards_2010.RData")
+View(awards.2010)
+articles[,c("title", "text")]
+articles[,c("title")]
+[[q]]
+[[1]]
+articles[,c("title")][[1]]
+rm(json_data)
+rm(json_file)
+library(snowfall)
+article.vec = articles$text
+award.vec = awards.2010$AbstractNarration[1:100]
+names(award.vec)=awards.2010$AwardID[1:100]
+award.vec[1]
+article.vec[1]
+seq(0, 99, 1)
+index <- seq(1, 100, 1)
+names(article.vec)=index
+names(article.vec)=index[1:72]
+article.vec[1]
+source("MakeDtmFunctions.R")
+dtm = Vec2Dtm(vec = article.vec, max.n.gram = 2)
+dtm = Vec2Dtm(vec = article.vec, max.n.gram = 1)
+dtm = DepluralizeDtm(dtm = dtm)
+dim(dtm)
+source("TopicModelingFunctions.R")
+tf.mat = data.frame(term = colnames(dtm), tf = colSums(dtm), df = colSums(dtm>0), stringsAsFactors = F)
+keep.terms = tf.mat$term[tf.mat$df>=5 & tf.mat$df < nrow(dtm)/2]
+keep.terms = ManualTrimVocab(keep.terms)
+n
+dtm = dtm[,keep.terms]
+dim(dtm)
+str(dtm)
+new.docs = Dtm2Docs(dtm.sparse = dtm, parallel = F, cpus = 8)
+new.docs
+doc.length = rowSums(dtm)
+which(doc.length==0)
+rm(new.docs)
+rm(doc.length)
+doc.length = rowSums(dtm)
+which(doc.length=0)
+which(doc.length==0)
+dropped.docs = rownames(dtm) %in% dropped.docs,]
+dropped.docs = rownames(dtm)[doc.length<20]
+dtm = dtm[!rownames(dtm) %in% dropped.docs,]
+dim(dtm)
+str(dtm)
+new.docs = Dtm2Docs(dtm.sparse = dtm, parallel = F, cpus = 8)
+kex = lexicalize(doclines = new.docs, sep = " ", vocab = keep.terms)
+lex = lexicalize(doclines = new.docs, sep = " ", vocab = keep.terms)
+rm(kex)
+rm(new.docs); gc()
+head(lex)
+k.list = seq(50, 250, by = 50)
+k.list = c(10, 20, k.list)
+sfInit(parallel = T, cpus = 8)
+sfExport(list=c("lex", "keep.terms"))
+sfLibrary(lda)
+models = sfLapply(k.list, function(k){ result = lda.collapsed.gibbs.sampler(documents = lex, K = k, vocab = keep.terms, num.iterations = 5, alpha = 5/k, eta = .05, compute.log.likelihood = T) })
+sfStop()
+names(models) = paste("k.", k.list, sep="")
+plot(models$k.250$log.likelihoods[2,], type="l")
+View(models$k.250$topics)
+model.output= lapply(models, function(x){ ExtractLdaResults_lda(lda.result = x, docnames = rownames(dtm))})
+str(model.output)
+r2 = lapply(model.output, function(x){TopicModelR2(dtm.sparse = dtm, topic.terms = x$topic.terms, doc.topics = x$doc.topics, normalize = F, parallel = T,cpus = 8)})
+str(r2[[2]])
+sfInit(parallel=T, cpus=8)
+sfExport("dtm")
+sfSource("TopicModelingFunctions.R")
+pcoh = sfLapply(model.output, function(x){
+result = apply(x$topic.terms, 1, function(y){
+ProbCoherence(topic = y,M = 5,dtm.sparse = dtm)
+})
+result
+})
+sfStop()
+metrics.mat = data.frame(k = k.list, ll=sapply(model.output, function(x){ x$likelihood[2,ncol(x$likelihood)]}), r2 = sapply(r2, function(x) x$r2), pcoh = sapply(pcoh, median), stringsAsFactors = F)
+plot(metrics.mat$k, metrics.mat$ll, type="o")
+top.terms3 = GetTopTerms(topic.terms = model.output$k.100$topic.terms, M = 3)
+View(top.terms3)
+op.terms10 = GetTopTerms(topic.terms = model.output$k.100$topic.terms, M = 10)
+View(op.terms10)
+top.terms5 = GetTopTerms(topic.terms = model.output$k.10$topic.terms, M = 5)
+View(top.terms5)
+topic.summary = data.frame(topic = colnames(top.terms10),
+top.terms = apply(top.terms10, 2, function(x){paste(x, collapse = " | ")}),
+pcoh = pcoh$k.10,
+prevalence = colSums(model.output$k.10$doc.topics)/sum(colSums(model.output$k.10$doc.topics))*10,
+stringsAsFactors = F)
+topic.summary = data.frame(topic = colnames(top.terms5),
+top.terms = apply(top.terms5, 2, function(x){paste(x, collapse = " | ")}),
+pcoh = pcoh$k.10,
+prevalence = colSums(model.output$k.10$doc.topics)/sum(colSums(model.output$k.10$doc.topics))*10,
+stringsAsFactors = F)
+View(topic.summary)
+for(j in 1:nrow(model.output$k.10$topic.terms)){
+TopicWordCloud(term.freq.vec = model.output$k.10$topic.terms[j,],
+title = rownames(model.output$k.10$topic.terms)[j],
+outfilepath = "wordcloud/"   )
+}
+install.packages("wordcloud")
+install.packages("wordcloud")
+View(TopicWordCloud)
+for(j in 1:nrow(model.output$k.10$topic.terms)){
+TopicWordCloud(term.freq.vec = model.output$k.10$topic.terms[j,],
+title = rownames(model.output$k.10$topic.terms)[j],
+outfilepath = "wordcloud/"   )
+}
+install.packages("RColorBrewer")
+library(RColorBrewer)
+for(j in 1:nrow(model.output$k.10$topic.terms)){
+TopicWordCloud(term.freq.vec = model.output$k.10$topic.terms[j,],
+title = rownames(model.output$k.10$topic.terms)[j],
+outfilepath = "wordcloud/"   )
+}
+for(j in 1:nrow(model.output$k.10$topic.terms)){
+TopicWordCloud(term.freq.vec = model.output$k.10$topic.terms[j,],
+title = rownames(model.output$k.10$topic.terms)[j],
+outfilepath = "wordcloud/"   )
+}
+library('wordcloud')
+for(j in 1:nrow(model.output$k.10$topic.terms)){
+TopicWordCloud(term.freq.vec = model.output$k.10$topic.terms[j,],
+title = rownames(model.output$k.10$topic.terms)[j],
+outfilepath = "wordcloud/"   )
+}
+for(j in 1:nrow(model.output$k.10$topic.terms)){
+TopicWordCloud(term.freq.vec = model.output$k.10$topic.terms[j,],
+title = rownames(model.output$k.10$topic.terms)[j],
+outfilepath = "wordcloud/"   )
+}
+source("TopicModelingFunctions.R")
+for(j in 1:nrow(model.output$k.10$topic.terms)){
+TopicWordCloud(term.freq.vec = model.output$k.10$topic.terms[j,],
+title = rownames(model.output$k.10$topic.terms)[j],
+outfilepath = "wordcloud/"   )
+}
+setwd("~/Documents/Duke/Research/LDA")
+library(snowfall)
+library(jsonlite)
+articles <- fromJSON("articles.json", flatten=TRUE)
+texts.vec = articles$text[1:1000]
+i <- seq(1,100, 1)
+rm(i)
+i <- seq(1,1000, 1)
+names(texts.vec) = i[1:1000]
+texts.vec[1]
+texts.vec[999]
+texts.vec[2]
+dtm = Vec2Dtm(vec = titles.vec)
+source("MakeDtmFunctions.R")
+source("TopicModelingFunctions.R")
+dtm = Vec2Dtm(vec = titles.vec)
+dtm = Vec2Dtm(vec = text.vec)
+dtm = Vec2Dtm(vec = texts.vec)
+dtm = DepluralizeDtm(dtm = dtm)
+dim(dtm)
+tf.mat = data.frame(term = colnames(dtm), tf = colSums(dtm), df = colSums(dtm>0), stringsAsFactors = F)
+#^ could add idf column
+keep.terms = tf.mat$term[tf.mat$df>=5 & tf.mat$df < nrow(dtm)/2]
+keep.terms = ManualTrimVocab(keep.terms)
+keep.terms
+library(stringr)
+getRidOfLessThan4 = function(terms){
+ret = c()
+for(i in terms){
+if(str_length(i) > 4){
+ret = c(ret, i)
+}else{
+ret = c(ret,i)
+}
+}
+return(ret)
+}
+keep.terms
+str[[1]]
+keep.terms = getRidOfLessThan4(keep.terms)
+keep.terms = getRidOfLessThan4(keep.terms)
+str[[1]]
+keep.terms
+dtm = dtm[,keep.terms]
+doc.length = rowSums(dtm)
+which(doc.length==0)
+dropped.docs=rownames(dtm)[doc.length <20]
+dtm = dtm[!rownames(dtm) %in% dropped.docs,]
+dim(dtm)
+str(dtm)
+new.docs = Dtm2Docs(dtm.sparse = dtm, parallel = F, cpus = 8)
+lex = lexicalize(doclines = new.docs, sep = " ",vocab = keep.terms )
+rm(new.docs);gc()
+head(lex)
+#
+k.list = seq(50, 250, by = 50)
+k.list = c(10,25, k.list)
+sfInit(parallel = T, cpus = 8)
+sfExport(list=c("lex","keep.terms"))
+sfLibrary(lda)
+models = sfLapply(k.list,function(k){
+result = lda.collapsed.gibbs.sampler(documents = lex, K = k, vocab = keep.terms, num.iterations = 5,
+alpha = 5/k,eta = .05, compute.log.likelihood = T)
+})
+#test = lda.collapsed.gibbs.sampler(documents = lex, K = 10, vocab = keep.terms, num.iterations = 5,  alpha = .01,eta = .05, compute.log.likelihood = T)
+##
+sfStop()
+names(models) = paste("k.", k.list, sep="")
+plot(models$k.250$log.likelihoods[2,],type="l")
+##models obtained
+View(models$k.250$topics)
+model.output= lapply(models, function(x){ ExtractLdaResults_lda(lda.result = x, docnames = rownames(dtm))})
+str(model.output)
+#choose k
+r2 = lapply(model.output, function(x){TopicModelR2(dtm.sparse = dtm, topic.terms = x$topic.terms, doc.topics = x$doc.topics, normalize = F, parallel = T,cpus = 8)})
+str(r2[[2]])
+sfInit(parallel=T,cpus = 8)
+sfExport("dtm")
+sfSource("TopicModelingFunctions.R")
+pcoh = sfLapply(model.output, function(x){
+result = apply(x$topic.terms, 1, function(y){
+ProbCoherence(topic = y,M = 5,dtm.sparse = dtm)
+})
+result
+})
+sfStop()
+metrics.mat = data.frame(k = k.list, ll=sapply(model.output, function(x){
+x$likelihood[2,ncol(x$likelihood)]}),
+r2 = sapply(r2, function(x) x$r2),
+pcoh = sapply(pcoh,median),
+stringsAsFactors = F)
+plot(metrics.mat$k, metrics.mat$ll, type="o")
+plot(metrics.mat$k, metrics.mat$r2, type="o")
+plot(metrics.mat$k, metrics.mat$pcoh, type="o")
+top.terms3 = GetTopTerms(topic.terms = model.output$k.100$topic.terms, M = 3)
+View(top.terms3)
+top.terms10 = GetTopTerms(topic.terms = model.output$k.100$topic.terms, M = 10)
+View(top.terms10)
+top.terms10 = GetTopTerms(topic.terms = model.output$k.10$topic.terms, M = 10)
+View(top.terms10)
+#summary and visualization
+top.terms10 = GetTopTerms(topic.terms = model.output$k.25$topic.terms, M = 10)
+View(top.terms10)
+#summary and visualization
+topic.summary = data.frame(topic = colnames(top.terms10),
+top.terms = apply(top.terms10, 2, function(x){paste(x, collapse = " | ")}),
+pcoh = pcoh$k.25,
+prevalence = colSums(model.output$k.25$doc.topics)/sum(colSums(model.output$k.25$doc.topics))*100,
+stringsAsFactors = F)
+View(topic.summary)
+setwd("~/Documents/Duke/Research/jehan_scrapy/jehan_scrapy")
+library(snowfall)
+library(jsonlite)
+articles <- fromJSON("articles.json", flatten=TRUE)
+library(snowfall)
+library(jsonlite)
+articles <- fromJSON("articles.json", flatten=TRUE)
+save.image("~/Documents/Duke/Research/hackernews_scrapy/hackernews_lda.RData")
+library(jsonlite)
+articles <- fromJSON("articles.json", flatten=TRUE)
+# Get all the text bodies as vec from the articles dataframe
+texts.vec = articles$text #run on 1000 entries first
+i <- seq(1,964, 1)
+names(texts.vec) = i[1:964]
+texts.vec[1]
+texts.vec[964]
+# Get source functions
+source("MakeDtmFunctions.R")
+source("TopicModelingFunctions.R")
+dtm = Vec2Dtm(vec = texts.vec)
+dtm = DepluralizeDtm(dtm = dtm)
+dim(dtm)
+dim(dtm)
+tf.mat = data.frame(term = colnames(dtm), tf = colSums(dtm), df = colSums(dtm>0), stringsAsFactors = F)
+#^ could add idf column
+keep.terms = tf.mat$term[tf.mat$df>=5 & tf.mat$df < nrow(dtm)/2]
+# Func to get rid of words less than length 4
+library(stringr)
+getRidOfLessThan4 = function(terms){
+ret = c()
+for(i in terms){
+if(str_length(i) > 4){
+ret = c(ret, i)
+}else{
+ret = c(ret,i)
+}
+}
+return(ret)
+}
+keep.terms = getRidOfLessThan4(keep.terms)
+dtm = dtm[,keep.terms]
+doc.length = rowSums(dtm)
+which(doc.length==0)
+dropped.docs=rownames(dtm)[doc.length <20]
+dtm = dtm[!rownames(dtm) %in% dropped.docs,]
+dim(dtm)
+str(dtm)
+new.docs = Dtm2Docs(dtm.sparse = dtm, parallel = F, cpus = 8)
+lex = lexicalize(doclines = new.docs, sep = " ",vocab = keep.terms )
+rm(new.docs);gc()
+head(lex)
+#
+k.list = seq(50, 250, by = 50)
+k.list = c(10,25, k.list)
+sfInit(parallel = T, cpus = 8)
+sfExport(list=c("lex","keep.terms"))
+sfLibrary(lda)
+models = sfLapply(k.list,function(k){
+result = lda.collapsed.gibbs.sampler(documents = lex, K = k, vocab = keep.terms, num.iterations = 5,
+alpha = 5/k,eta = .05, compute.log.likelihood = T)
+})
+#test = lda.collapsed.gibbs.sampler(documents = lex, K = 10, vocab = keep.terms, num.iterations = 5,  alpha = .01,eta = .05, compute.log.likelihood = T)
+##
+sfStop()
+names(models) = paste("k.", k.list, sep="")
+plot(models$k.250$log.likelihoods[2,],type="l")
+##models obtained
+View(models$k.250$topics)
+model.output= lapply(models, function(x){ ExtractLdaResults_lda(lda.result = x, docnames = rownames(dtm))})
+str(model.output)
+#choose k
+r2 = lapply(model.output, function(x){TopicModelR2(dtm.sparse = dtm, topic.terms = x$topic.terms, doc.topics = x$doc.topics, normalize = F, parallel = T,cpus = 8)})
+str(r2[[2]])
+sfInit(parallel=T,cpus = 8)
+sfExport("dtm")
+sfSource("TopicModelingFunctions.R")
+pcoh = sfLapply(model.output, function(x){
+result = apply(x$topic.terms, 1, function(y){
+ProbCoherence(topic = y,M = 5,dtm.sparse = dtm)
+})
+result
+})
+sfStop()
+metrics.mat = data.frame(k = k.list, ll=sapply(model.output, function(x){
+x$likelihood[2,ncol(x$likelihood)]}),
+r2 = sapply(r2, function(x) x$r2),
+pcoh = sapply(pcoh,median),
+stringsAsFactors = F)
+plot(metrics.mat$k, metrics.mat$ll, type="o")
+plot(metrics.mat$k, metrics.mat$r2, type="o")
+plot(metrics.mat$k, metrics.mat$pcoh, type="o")
+top.terms3 = GetTopTerms(topic.terms = model.output$k.10$topic.terms, M = 3)
+View(top.terms3)
+top.terms10 = GetTopTerms(topic.terms = model.output$k.10$topic.terms, M = 10)
+View(top.terms10)
+#summary and visualization
+topic.summary = data.frame(topic = colnames(top.terms10),
+top.terms = apply(top.terms10, 2, function(x){paste(x, collapse = " | ")}),
+pcoh = pcoh$k.25,
+prevalence = colSums(model.output$k.25$doc.topics)/sum(colSums(model.output$k.25$doc.topics))*100,
+stringsAsFactors = F)
+View(topic.summary)
+save.image("~/Documents/Duke/Research/jehan_scrapy/jehan_scrapy/jehan_lda.RData")
